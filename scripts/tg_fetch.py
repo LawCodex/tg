@@ -60,18 +60,21 @@ def listing():
 
 
 HEAD = re.compile(r"^(LOI|Loi|DECRET|DÉCRET|Décret|ORDONNANCE|Ordonnance|ARRETE|ARRÊTÉ|Arrêté|DECISION|DÉCISION|Décision)"
-                  r"\s+(ORGANIQUE\s+|organique\s+|CONSTITUTIONNELLE\s+|INTERMINISTERIEL\s+)?N\s*[°o]\s*([0-9]{2,4}\s*[-–]\s*[0-9]+)", re.U)
+                  r"\s+(ORGANIQUE\s+|organique\s+|CONSTITUTIONNELLE\s+|constitutionnelle\s+|UNIFORME\s+|uniforme\s+|INTERMINISTERIEL\s+|interministériel\s+)?[Nn]\s*[°o*º]?\s*([0-9]{2,4}\s*[-–—]\s*[0-9]+)", re.U)
 
 
 def numkey(s):
-    s = re.sub(r"\s", "", s).replace("–", "-")
+    s = re.sub(r"\s", "", s).replace("–", "-").replace("—", "-")
     a, b = s.split("-", 1)
-    return "%s-%03d" % (a, int(re.match(r"\d+", b).group(0)))
+    return "%s-%03d" % (a[-2:], int(re.match(r"\d+", b).group(0)))  # 2-digit year: "04-03" == "2004-03"
 
 
 def cut(pages, start_page, num):
     """Return the lines of the law `num` (e.g. '2025-004') from the JO pages."""
-    lines = T.clean_pages(pages[max(0, start_page - 1):])
+    if start_page > len(pages):
+        start_page = 1  # extracts ("Pages from jo ...") keep the page number of the full JO issue
+    lines = T.clean_pages(pages[max(0, start_page - 2):])  # listing page numbers are sometimes one page late
+    lines = [re.sub(r"^[^\wÀ-ÿ]+(?=(LOI|Loi)\b)", "", x) for x in lines]
     want = numkey(num) if num else None
     start = None
     for i, x in enumerate(lines):
@@ -94,7 +97,30 @@ def cut(pages, start_page, num):
     return lines[start:end]
 
 
+def _extract(path):
+    if T.pdf_ok(path):
+        tmp = os.path.join(RAW, "ocr", os.path.basename(path))
+        os.makedirs(tmp, exist_ok=True)
+        T.pdf_text_columns(path, "fra", tmpdir=tmp)
+    return path
+
+
+def prewarm(n):
+    """Extract text (OCR) of all downloaded JO PDFs in parallel; cached next to the PDFs."""
+    from concurrent.futures import ProcessPoolExecutor
+    d = os.path.join(RAW, "pdf")
+    paths = sorted(os.path.join(d, f) for f in os.listdir(d) if f.endswith(".pdf"))
+    with ProcessPoolExecutor(n) as ex:
+        for k, _ in enumerate(ex.map(_extract, paths)):
+            if k % 20 == 0:
+                print("extracted", k, "/", len(paths), flush=True)
+
+
 def main():
+    if "--jobs" in sys.argv:
+        prewarm(int(sys.argv[sys.argv.index("--jobs") + 1]))
+        if "--prewarm-only" in sys.argv:
+            return
     rows = listing()
     print("listed", len(rows), flush=True)
     used = {}
@@ -113,7 +139,7 @@ def main():
         if "--download-only" in sys.argv:
             continue
         pages, ocr = T.pdf_text_columns(dest, "fra", tmpdir=RAW)
-        m = re.search(r"(\d{4})\s*[-–]\s*(\d+)", r["label"])
+        m = re.search(r"(\d{4}|\d{2})\s*[-–—]\s*(\d+)", r["label"])
         num = "%s-%s" % (m.group(1), m.group(2)) if m else None
         seg = cut(pages, r["page"], num)
         if not seg:
