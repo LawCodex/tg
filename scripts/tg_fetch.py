@@ -147,7 +147,8 @@ def main():
             continue
         organique = "organique" in r["label"].lower() or "ORGANIQUE" in seg[0]
         constit = ("constitution" in r["label"].lower() or "CONSTITUTIONNELLE" in seg[0]
-                   or re.search(r"(portant|r[ée]vision de la|modifiant la|compl[ée]tant la)\s+constitution", r["subject"], re.I))
+                   or re.search(r"(portant|r[ée]vision de la|modifiant la|compl[ée]tant la)\s+constitution", r["subject"], re.I)
+                   or re.search(r"(modification|r[ée]vision|modifiant|compl[ée]tant).{0,120}\bde la constitution\b", r["subject"], re.I))
         # heading lines: "LOI N° ... du ..." + subject lines until the enacting formula
         k = 1
         while k < min(len(seg), 10) and not re.search(r"délibéré|promulgue|adopté|^Article|^ARTICLE", seg[k]):
